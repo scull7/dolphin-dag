@@ -28,8 +28,8 @@ main =
 
 type Guide
     = Hidden
-    | Intro
-    | TryCycle
+    | ClickLoad
+    | ClickExtract
     | Done
 
 
@@ -62,7 +62,7 @@ exampleWorkflow =
 
 init : Model
 init =
-    exampleModel Intro
+    exampleModel ClickLoad
 
 
 exampleModel : Guide -> Model
@@ -92,7 +92,6 @@ type Msg
     | TypedJson String
     | LoadJson
     | SyncJson
-    | GuideNext
     | GuideSkip
     | GuideRestart
     | ResetExample
@@ -120,7 +119,7 @@ update msg model =
             connectOrSelect id model
 
         ClearSelection ->
-            { model | selected = Nothing, mutation = Nothing }
+            advanceGuide { model | selected = Nothing, mutation = Nothing }
 
         RemoveNode id ->
             refreshJson
@@ -161,22 +160,14 @@ update msg model =
         SyncJson ->
             refreshJson { model | mutation = Just (Ok "synced JSON from graph") }
 
-        GuideNext ->
-            case model.guide of
-                Intro ->
-                    { model | guide = TryCycle }
-
-                _ ->
-                    model
-
         GuideSkip ->
             { model | guide = Hidden }
 
         GuideRestart ->
-            exampleModel Intro
+            exampleModel ClickLoad
 
         ResetExample ->
-            restoreExample model
+            exampleModel ClickLoad
 
 
 addDraftNode : Model -> Model
@@ -217,14 +208,20 @@ connectOrSelect : String -> Model -> Model
 connectOrSelect id model =
     case model.selected of
         Nothing ->
-            { model
-                | selected = Just id
-                , mutation = Just (Ok ("selected " ++ id))
-            }
+            advanceGuide
+                { model
+                    | selected = Just id
+                    , mutation =
+                        if guideOpen model.guide then
+                            Nothing
+
+                        else
+                            Just (Ok ("selected " ++ id))
+                }
 
         Just from ->
             if from == id then
-                { model | selected = Nothing, mutation = Nothing }
+                advanceGuide { model | selected = Nothing, mutation = Nothing }
 
             else
                 case Dag.addEdge from id model.workflow of
@@ -236,36 +233,75 @@ connectOrSelect id model =
                             }
 
                     Ok workflow ->
-                        refreshJson
-                            { model
-                                | workflow = workflow
-                                , selected = Nothing
-                                , mutation = Just (Ok ("add_edge " ++ from ++ " -> " ++ id))
-                            }
+                        advanceGuide
+                            (refreshJson
+                                { model
+                                    | workflow = workflow
+                                    , selected = Nothing
+                                    , mutation = Just (Ok ("add_edge " ++ from ++ " -> " ++ id))
+                                }
+                            )
 
 
 advanceGuide : Model -> Model
 advanceGuide model =
-    case ( model.guide, model.mutation ) of
-        ( TryCycle, Just (Err (Dag.WouldCycle "load" "extract")) ) ->
-            { model | guide = Done }
+    case model.guide of
+        ClickLoad ->
+            if model.selected == Just "load" then
+                { model | guide = ClickExtract }
 
-        _ ->
+            else
+                model
+
+        ClickExtract ->
+            case model.mutation of
+                Just (Err (Dag.WouldCycle "load" "extract")) ->
+                    { model | guide = Done }
+
+                _ ->
+                    if model.selected == Just "load" then
+                        model
+
+                    else
+                        { model | guide = ClickLoad }
+
+        Hidden ->
+            model
+
+        Done ->
             model
 
 
-restoreExample : Model -> Model
-restoreExample model =
-    { model
-        | workflow = exampleWorkflow
-        , selected = Nothing
-        , jsonText = Dag.encodePretty exampleWorkflow
-        , mutation = Nothing
-        , draftId = ""
-        , draftName = ""
-        , draftTaskType = "shell"
-        , draftStatus = Pending
-    }
+guideOpen : Guide -> Bool
+guideOpen guide =
+    case guide of
+        Hidden ->
+            False
+
+        Done ->
+            False
+
+        ClickLoad ->
+            True
+
+        ClickExtract ->
+            True
+
+
+guideTarget : Guide -> Maybe String
+guideTarget guide =
+    case guide of
+        ClickLoad ->
+            Just "load"
+
+        ClickExtract ->
+            Just "extract"
+
+        Hidden ->
+            Nothing
+
+        Done ->
+            Nothing
 
 
 refreshJson : Model -> Model
@@ -355,25 +391,59 @@ resultBanner model =
         topo =
             Dag.topologicalOrder model.workflow
 
-        ( className, body ) =
-            case ( model.mutation, topo ) of
-                ( Just (Err err), _ ) ->
-                    ( "result result-error", Dag.formatError err )
+        proving =
+            case model.guide of
+                Done ->
+                    True
 
-                ( _, Err err ) ->
-                    ( "result result-error", "topological_order " ++ Dag.formatError err )
+                _ ->
+                    False
 
-                ( Just (Ok text), Ok _ ) ->
-                    ( "result result-ok", "Ok (" ++ text ++ ")" )
+        ( className, body, showTopo ) =
+            case ( model.mutation, topo, model.guide ) of
+                ( Just (Err err), _, Done ) ->
+                    ( "result result-error", Dag.formatError err, False )
 
-                ( Nothing, Ok _ ) ->
-                    ( "result result-quiet", "add_edge : Result WouldCycle (). Select two nodes to connect." )
+                ( Just (Err err), _, _ ) ->
+                    ( "result result-error", Dag.formatError err, True )
+
+                ( _, Err err, _ ) ->
+                    ( "result result-error", "topological_order " ++ Dag.formatError err, True )
+
+                ( Just (Ok text), Ok _, Hidden ) ->
+                    ( "result result-ok", "Ok (" ++ text ++ ")", True )
+
+                ( Just (Ok text), Ok _, Done ) ->
+                    ( "result result-ok", "Ok (" ++ text ++ ")", True )
+
+                ( Just (Ok _), Ok _, _ ) ->
+                    ( "result result-quiet", "", True )
+
+                ( Nothing, Ok _, Hidden ) ->
+                    ( "result result-quiet", "add_edge : Result WouldCycle (). Select two nodes to connect.", True )
+
+                ( Nothing, Ok _, Done ) ->
+                    ( "result result-quiet", "add_edge : Result WouldCycle (). Select two nodes to connect.", True )
+
+                ( Nothing, Ok _, _ ) ->
+                    ( "result result-quiet", "", True )
     in
     div [ Attr.class className ]
-        [ div [] [ Html.text body ]
-        , div [ Attr.class "result-line" ]
-            [ Html.text ("topological_order : " ++ Dag.formatTopo topo) ]
-        ]
+        ((if String.isEmpty body then
+            []
+
+          else
+            [ div [] [ Html.text body ] ]
+         )
+            ++ (if showTopo && not proving then
+                    [ div [ Attr.class "result-line" ]
+                        [ Html.text ("topological_order : " ++ Dag.formatTopo topo) ]
+                    ]
+
+                else
+                    []
+               )
+        )
 
 
 guideStrip : Model -> Html Msg
@@ -382,19 +452,18 @@ guideStrip model =
         Hidden ->
             text ""
 
-        Intro ->
-            guideRow "This is extract → transform → load. A valid DAG."
-                [ ghost "Next" GuideNext
-                , ghost "Skip" GuideSkip
+        ClickLoad ->
+            guideRow "This extract → transform → load graph is valid. Click Load warehouse."
+                [ ghost "Skip" GuideSkip
                 ]
 
-        TryCycle ->
-            guideRow "Click load, then extract."
+        ClickExtract ->
+            guideRow "Now click Extract logs. That edge would cycle, so the editor must reject it."
                 [ ghost "Skip" GuideSkip
                 ]
 
         Done ->
-            guideRow "WouldCycle. The graph stayed acyclic. You can keep editing."
+            guideRow "Rejected. That edge would loop. The two real edges stayed. You can keep editing."
                 [ ghost "Restart" GuideRestart
                 , ghost "Skip" GuideSkip
                 ]
@@ -433,7 +502,7 @@ toolbox model =
             [ Html.text "Blank id slugs the name. Select a source, then a target." ]
         , h2 [] [ Html.text "Nodes" ]
         , ul [ Attr.class "item-list" ]
-            (List.map (nodeRow model.selected) model.workflow.nodes)
+            (List.map (nodeRow model.selected (guideTarget model.guide)) model.workflow.nodes)
         , h2 [] [ Html.text "Edges" ]
         , ul [ Attr.class "item-list" ]
             (List.map edgeRow model.workflow.edges)
@@ -463,21 +532,35 @@ statusOption current status =
         [ Html.text (Dag.statusToString status) ]
 
 
-nodeRow : Maybe String -> Node -> Html Msg
-nodeRow selected item =
+nodeRow : Maybe String -> Maybe String -> Node -> Html Msg
+nodeRow selected target item =
     let
         rowClass =
-            if selected == Just item.id then
-                "selected-row"
+            String.join " "
+                (List.filter (not << String.isEmpty)
+                    [ if selected == Just item.id then
+                        "selected-row"
 
-            else
-                ""
+                      else
+                        ""
+                    , if target == Just item.id then
+                        "target"
+
+                      else
+                        ""
+                    ]
+                )
     in
     li [ Attr.class rowClass ]
         [ button [ Attr.class "ghost row-action", Events.onClick (ClickNode item.id) ]
             [ Html.text item.name
             , span [ Attr.class "muted" ] [ Html.text (" · " ++ item.id) ]
             ]
+        , if target == Just item.id then
+            span [ Attr.class "target-label" ] [ Html.text "Click" ]
+
+          else
+            text ""
         , button [ Attr.class "danger", Events.onClick (RemoveNode item.id) ]
             [ Html.text "Remove" ]
         ]
@@ -533,9 +616,9 @@ canvasPanel model =
                 ]
                 (arrowDef
                     :: List.map (drawEdge placed) model.workflow.edges
-                    ++ List.map (drawNode model.selected) placed
+                    ++ List.map (drawNode model.selected (guideTarget model.guide)) placed
                 )
-        , topoLine model.workflow
+        , topoLine model.guide model.workflow
         ]
 
 
@@ -684,11 +767,14 @@ findPlace id placed =
         |> List.head
 
 
-drawNode : Maybe String -> Placed -> Svg Msg
-drawNode selected placed =
+drawNode : Maybe String -> Maybe String -> Placed -> Svg Msg
+drawNode selected target placed =
     let
         active =
             selected == Just placed.node.id
+
+        targeted =
+            target == Just placed.node.id
 
         className =
             "task-card status-"
@@ -699,6 +785,26 @@ drawNode selected placed =
                     else
                         ""
                    )
+                ++ (if targeted then
+                        " target"
+
+                    else
+                        ""
+                   )
+
+        clickMark =
+            if targeted then
+                [ Svg.text_
+                    [ SvgAttr.x (String.fromFloat (nodeWidth - 12))
+                    , SvgAttr.y "18"
+                    , SvgAttr.class "task-click"
+                    , SvgAttr.textAnchor "end"
+                    ]
+                    [ Svg.text "Click" ]
+                ]
+
+            else
+                []
     in
     Svg.g
         [ SvgEvents.onClick (ClickNode placed.node.id)
@@ -706,49 +812,56 @@ drawNode selected placed =
         , SvgAttr.transform
             ("translate(" ++ String.fromFloat placed.x ++ " " ++ String.fromFloat placed.y ++ ")")
         ]
-        [ Svg.rect
+        ([ Svg.rect
             [ SvgAttr.width (String.fromFloat nodeWidth)
             , SvgAttr.height (String.fromFloat nodeHeight)
             , SvgAttr.rx "4"
             ]
             []
-        , Svg.text_
+         , Svg.text_
             [ SvgAttr.x "12"
             , SvgAttr.y "26"
             , SvgAttr.class "task-name"
             ]
             [ Svg.text placed.node.name ]
-        , Svg.text_
+         , Svg.text_
             [ SvgAttr.x "12"
             , SvgAttr.y "46"
             , SvgAttr.class "task-meta"
             ]
             [ Svg.text (placed.node.taskType ++ " · " ++ placed.node.id) ]
-        , Svg.text_
+         , Svg.text_
             [ SvgAttr.x "12"
             , SvgAttr.y "64"
             , SvgAttr.class "task-status"
             ]
             [ Svg.text (Dag.statusToString placed.node.status) ]
-        ]
+         ]
+            ++ clickMark
+        )
 
 
-topoLine : Workflow -> Html Msg
-topoLine workflow =
-    let
-        result =
-            Dag.topologicalOrder workflow
+topoLine : Guide -> Workflow -> Html Msg
+topoLine guide workflow =
+    case guide of
+        Done ->
+            text ""
 
-        className =
-            case result of
-                Err _ ->
-                    "topo cycle"
+        _ ->
+            let
+                result =
+                    Dag.topologicalOrder workflow
 
-                Ok _ ->
-                    "topo"
-    in
-    p [ Attr.class className ]
-        [ Html.text ("topological_order : " ++ Dag.formatTopo result) ]
+                className =
+                    case result of
+                        Err _ ->
+                            "topo cycle"
+
+                        Ok _ ->
+                            "topo"
+            in
+            p [ Attr.class className ]
+                [ Html.text ("topological_order : " ++ Dag.formatTopo result) ]
 
 
 documentPanel : Model -> Html Msg

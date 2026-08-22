@@ -302,6 +302,22 @@ button.row-action {
     padding-right: var(--space-8);
 }
 
+.item-list li.target {
+    outline: 1px solid var(--primary);
+    outline-offset: calc(-1 * var(--space-2));
+}
+
+.item-list li.target.selected-row {
+    outline-offset: 0;
+}
+
+.target-label {
+    color: var(--primary);
+    font-size: var(--text-12);
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
 .canvas-head {
     display: flex;
     justify-content: space-between;
@@ -353,6 +369,17 @@ button.row-action {
 .task-card.selected rect {
     stroke: var(--primary);
     stroke-width: 2;
+}
+
+.task-card.target rect {
+    stroke: var(--primary);
+    stroke-width: 2;
+}
+
+.task-click {
+    font-size: var(--text-12);
+    font-weight: 600;
+    fill: var(--primary);
 }
 
 .task-name {
