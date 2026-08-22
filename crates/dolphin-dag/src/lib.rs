@@ -54,13 +54,16 @@ pub struct Workflow {
 }
 
 /// Why a mutation or topo sort failed.
+///
+/// [`Workflow::add_edge`] returns [`Error::WouldCycle`] when the new edge
+/// would close a loop. That is a typed error, not a panic or a loose string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     EmptyNodeId,
     DuplicateNode { id: String },
     UnknownNode { id: String },
     DuplicateEdge { from: String, to: String },
-    Cycle { from: String, to: String },
+    WouldCycle { from: String, to: String },
 }
 
 impl fmt::Display for Error {
@@ -72,8 +75,8 @@ impl fmt::Display for Error {
             Error::DuplicateEdge { from, to } => {
                 write!(f, "duplicate edge: {from} -> {to}")
             }
-            Error::Cycle { from, to } => {
-                write!(f, "edge {from} -> {to} would create a cycle")
+            Error::WouldCycle { from, to } => {
+                write!(f, "WouldCycle({from} -> {to})")
             }
         }
     }
@@ -120,7 +123,7 @@ impl Workflow {
             return Err(Error::DuplicateEdge { from, to });
         }
         if from == to || self.reaches(&to, &from) {
-            return Err(Error::Cycle { from, to });
+            return Err(Error::WouldCycle { from, to });
         }
 
         self.edges.push(Edge { from, to });
@@ -170,9 +173,12 @@ impl Workflow {
             .collect();
 
         for edge in &self.edges {
-            *indegree
-                .get_mut(edge.to.as_str())
-                .expect("validated endpoints") += 1;
+            let Some(degree) = indegree.get_mut(edge.to.as_str()) else {
+                return Err(Error::UnknownNode {
+                    id: edge.to.clone(),
+                });
+            };
+            *degree += 1;
         }
 
         let mut ready: Vec<&str> = indegree
@@ -185,10 +191,17 @@ impl Workflow {
 
         while !ready.is_empty() {
             let id = ready.remove(0);
-            order.push(*index.get(id).expect("indexed node"));
+            let Some(node) = index.get(id) else {
+                return Err(Error::UnknownNode { id: id.to_string() });
+            };
+            order.push(*node);
             let mut unlocked = Vec::new();
             for successor in self.successors(id) {
-                let degree = indegree.get_mut(successor).expect("validated endpoints");
+                let Some(degree) = indegree.get_mut(successor) else {
+                    return Err(Error::UnknownNode {
+                        id: successor.to_string(),
+                    });
+                };
                 *degree -= 1;
                 if *degree == 0 {
                     unlocked.push(successor);
@@ -199,10 +212,7 @@ impl Workflow {
         }
 
         if order.len() != self.nodes.len() {
-            return Err(Error::Cycle {
-                from: String::from("?"),
-                to: String::from("?"),
-            });
+            return Err(leftover_cycle(&self.edges, &order));
         }
 
         Ok(order)
@@ -215,7 +225,24 @@ impl Workflow {
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
+}
 
+fn leftover_cycle(edges: &[Edge], order: &[&Node]) -> Error {
+    let placed: HashSet<&str> = order.iter().map(|node| node.id.as_str()).collect();
+    edges
+        .iter()
+        .find(|edge| !placed.contains(edge.from.as_str()) && !placed.contains(edge.to.as_str()))
+        .map(|edge| Error::WouldCycle {
+            from: edge.from.clone(),
+            to: edge.to.clone(),
+        })
+        .unwrap_or(Error::WouldCycle {
+            from: String::from("*"),
+            to: String::from("*"),
+        })
+}
+
+impl Workflow {
     fn successors(&self, id: &str) -> Vec<&str> {
         self.edges
             .iter()

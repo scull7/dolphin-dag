@@ -34,7 +34,7 @@ type alias Model =
     , draftStatus : Status
     , selected : Maybe String
     , jsonText : String
-    , notice : Maybe String
+    , mutation : Maybe (Result Dag.Error String)
     }
 
 
@@ -47,7 +47,7 @@ init =
     , draftStatus = Pending
     , selected = Nothing
     , jsonText = Dag.encodePretty Dag.empty
-    , notice = Nothing
+    , mutation = Nothing
     }
 
 
@@ -88,7 +88,7 @@ update msg model =
             connectOrSelect id model
 
         ClearSelection ->
-            { model | selected = Nothing, notice = Nothing }
+            { model | selected = Nothing, mutation = Nothing }
 
         RemoveNode id ->
             refreshJson
@@ -100,14 +100,14 @@ update msg model =
 
                         else
                             model.selected
-                    , notice = Nothing
+                    , mutation = Nothing
                 }
 
         RemoveEdge from to ->
             refreshJson
                 { model
                     | workflow = Dag.removeEdge from to model.workflow
-                    , notice = Nothing
+                    , mutation = Nothing
                 }
 
         TypedJson value ->
@@ -116,23 +116,18 @@ update msg model =
         LoadJson ->
             case Decode.decodeString Dag.decode model.jsonText of
                 Err err ->
-                    { model | notice = Just (Dag.errorToString (Dag.InvalidJson (Decode.errorToString err))) }
+                    { model | mutation = Just (Err (Dag.InvalidJson (Decode.errorToString err))) }
 
                 Ok workflow ->
                     { model
                         | workflow = workflow
                         , selected = Nothing
                         , jsonText = Dag.encodePretty workflow
-                        , notice =
-                            if Dag.hasCycle workflow then
-                                Just "Loaded document contains a cycle. Topological order is unavailable until an edge is removed."
-
-                            else
-                                Just "Loaded workflow document."
+                        , mutation = Just (Ok "loaded document")
                     }
 
         SyncJson ->
-            refreshJson { model | notice = Just "JSON synced from the current graph." }
+            refreshJson { model | mutation = Just (Ok "synced JSON from graph") }
 
 
 addDraftNode : Model -> Model
@@ -157,7 +152,7 @@ addDraftNode model =
             model.workflow
     of
         Err err ->
-            { model | notice = Just (Dag.errorToString err) }
+            { model | mutation = Just (Err err) }
 
         Ok workflow ->
             refreshJson
@@ -165,7 +160,7 @@ addDraftNode model =
                     | workflow = workflow
                     , draftId = ""
                     , draftName = ""
-                    , notice = Nothing
+                    , mutation = Just (Ok ("add_node " ++ id))
                 }
 
 
@@ -175,19 +170,19 @@ connectOrSelect id model =
         Nothing ->
             { model
                 | selected = Just id
-                , notice = Just ("Selected " ++ id ++ ". Click a downstream task to connect.")
+                , mutation = Just (Ok ("selected " ++ id))
             }
 
         Just from ->
             if from == id then
-                { model | selected = Nothing, notice = Nothing }
+                { model | selected = Nothing, mutation = Nothing }
 
             else
                 case Dag.addEdge from id model.workflow of
                     Err err ->
                         { model
                             | selected = Nothing
-                            , notice = Just (Dag.errorToString err)
+                            , mutation = Just (Err err)
                         }
 
                     Ok workflow ->
@@ -195,7 +190,7 @@ connectOrSelect id model =
                             { model
                                 | workflow = workflow
                                 , selected = Nothing
-                                , notice = Just ("Connected " ++ from ++ " -> " ++ id)
+                                , mutation = Just (Ok ("add_edge " ++ from ++ " -> " ++ id))
                             }
 
 
@@ -261,7 +256,7 @@ view model =
     div [ Attr.class "app" ]
         [ Html.node "link" [ Attr.rel "stylesheet", Attr.href "/styles.css" ] []
         , header
-        , noticeBanner model
+        , resultBanner model
         , div [ Attr.class "workspace" ]
             [ toolbox model
             , canvasPanel model
@@ -279,31 +274,31 @@ header =
         ]
 
 
-noticeBanner : Model -> Html Msg
-noticeBanner model =
+resultBanner : Model -> Html Msg
+resultBanner model =
     let
-        cycle =
-            Dag.hasCycle model.workflow
+        topo =
+            Dag.topologicalOrder model.workflow
 
         ( className, body ) =
-            if cycle then
-                ( "banner banner-cycle"
-                , Maybe.withDefault "This graph has a cycle." model.notice
-                )
+            case ( model.mutation, topo ) of
+                ( Just (Err err), _ ) ->
+                    ( "banner banner-cycle", Dag.formatError err )
 
-            else
-                case model.notice of
-                    Nothing ->
-                        ( "banner banner-quiet", "Add tasks, then click two nodes to draw an edge. Cycles are rejected." )
+                ( _, Err err ) ->
+                    ( "banner banner-cycle", "topological_order " ++ Dag.formatError err )
 
-                    Just text ->
-                        if String.contains "Cycle rejected" text then
-                            ( "banner banner-cycle", text )
+                ( Just (Ok text), Ok _ ) ->
+                    ( "banner banner-ok", "Ok (" ++ text ++ ")" )
 
-                        else
-                            ( "banner banner-ok", text )
+                ( Nothing, Ok _ ) ->
+                    ( "banner banner-quiet", "add_edge : Result WouldCycle (). Click two nodes to connect." )
     in
-    div [ Attr.class className ] [ Html.text body ]
+    div [ Attr.class className ]
+        [ div [] [ Html.text body ]
+        , div [ Attr.class "result-line" ]
+            [ Html.text ("topological_order : " ++ Dag.formatTopo topo) ]
+        ]
 
 
 toolbox : Model -> Html Msg
@@ -617,21 +612,20 @@ drawNode selected placed =
 
 topoLine : Workflow -> Html Msg
 topoLine workflow =
-    case Dag.topologicalOrder workflow of
-        Err _ ->
-            p [ Attr.class "topo cycle" ] [ Html.text "Topological order: unavailable (cycle)." ]
+    let
+        result =
+            Dag.topologicalOrder workflow
 
-        Ok order ->
-            if List.isEmpty order then
-                p [ Attr.class "topo" ] [ Html.text "Topological order: (empty)" ]
+        className =
+            case result of
+                Err _ ->
+                    "topo cycle"
 
-            else
-                p [ Attr.class "topo" ]
-                    [ Html.text
-                        ("Topological order: "
-                            ++ String.join " → " (List.map .id order)
-                        )
-                    ]
+                Ok _ ->
+                    "topo"
+    in
+    p [ Attr.class className ]
+        [ Html.text ("topological_order : " ++ Dag.formatTopo result) ]
 
 
 documentPanel : Model -> Html Msg

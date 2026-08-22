@@ -1,4 +1,4 @@
-//! Named cargo tests for the workflow DAG document.
+//! Named cargo tests for the workflow DAG class.
 
 use dolphin_dag::{Error, Node, Status, Workflow};
 
@@ -9,6 +9,15 @@ fn task(id: &str, name: &str, task_type: &str) -> Node {
         task_type: task_type.to_string(),
         status: Status::Pending,
     }
+}
+
+fn ids(workflow: &Workflow) -> Vec<String> {
+    workflow
+        .topological_order()
+        .expect("valid dag")
+        .into_iter()
+        .map(|node| node.id.clone())
+        .collect()
 }
 
 #[test]
@@ -33,15 +42,8 @@ fn three_node_linear_dag_topo_order() {
     workflow.add_edge("extract", "transform").unwrap();
     workflow.add_edge("transform", "load").unwrap();
 
-    let ids: Vec<String> = workflow
-        .topological_order()
-        .expect("linear")
-        .into_iter()
-        .map(|node| node.id.clone())
-        .collect();
-
     assert_eq!(
-        ids,
+        ids(&workflow),
         vec![
             String::from("extract"),
             String::from("transform"),
@@ -51,19 +53,51 @@ fn three_node_linear_dag_topo_order() {
 }
 
 #[test]
-fn cycle_rejected() {
+fn diamond_dag_topo_order() {
     let mut workflow = Workflow::new();
-    workflow.add_node(task("left", "Left", "shell")).unwrap();
-    workflow.add_node(task("right", "Right", "shell")).unwrap();
-    workflow.add_edge("left", "right").unwrap();
-
-    match workflow.add_edge("right", "left") {
-        Err(Error::Cycle { from, to }) => {
-            assert_eq!(from, "right");
-            assert_eq!(to, "left");
-        }
-        other => panic!("expected cycle, got {other:?}"),
+    for id in ["A", "B", "C", "D"] {
+        workflow.add_node(task(id, id, "shell")).unwrap();
     }
+    workflow.add_edge("A", "B").unwrap();
+    workflow.add_edge("A", "C").unwrap();
+    workflow.add_edge("B", "D").unwrap();
+    workflow.add_edge("C", "D").unwrap();
+
+    let order = ids(&workflow);
+    let pos = |id: &str| order.iter().position(|item| item == id).expect(id);
+
+    assert_eq!(order.len(), 4);
+    assert!(pos("A") < pos("B"));
+    assert!(pos("A") < pos("C"));
+    assert!(pos("B") < pos("D"));
+    assert!(pos("C") < pos("D"));
+    assert_eq!(order, vec!["A", "B", "C", "D"]);
+}
+
+#[test]
+fn cycle_rejected() {
+    a_b_a_is_would_cycle();
+}
+
+#[test]
+fn a_b_a_rejected() {
+    a_b_a_is_would_cycle();
+}
+
+fn a_b_a_is_would_cycle() {
+    let mut workflow = Workflow::new();
+    workflow.add_node(task("A", "A", "shell")).unwrap();
+    workflow.add_node(task("B", "B", "shell")).unwrap();
+    workflow.add_edge("A", "B").unwrap();
+
+    match workflow.add_edge("B", "A") {
+        Err(Error::WouldCycle { from, to }) => {
+            assert_eq!(from, "B");
+            assert_eq!(to, "A");
+        }
+        other => panic!("expected typed WouldCycle, got {other:?}"),
+    }
+    assert_eq!(workflow.edges.len(), 1);
 }
 
 #[test]

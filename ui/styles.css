@@ -73,6 +73,13 @@ body {
     font-weight: 600;
 }
 
+.result-line {
+    margin-top: 4px;
+    font-family: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 500;
+}
+
 .workspace {
     display: grid;
     grid-template-columns: 280px minmax(0, 1fr) 300px;

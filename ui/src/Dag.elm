@@ -10,6 +10,8 @@ module Dag exposing
     , empty
     , encodePretty
     , errorToString
+    , formatError
+    , formatTopo
     , hasCycle
     , incoming
     , node
@@ -57,7 +59,7 @@ type Error
     | DuplicateNode String
     | UnknownNode String
     | DuplicateEdge String String
-    | Cycle String String
+    | WouldCycle String String
     | InvalidJson String
 
 
@@ -99,7 +101,7 @@ addEdge from to workflow =
         Err (DuplicateEdge from to)
 
     else if from == to || reaches to from workflow then
-        Err (Cycle from to)
+        Err (WouldCycle from to)
 
     else
         Ok { workflow | edges = workflow.edges ++ [ { from = from, to = to } ] }
@@ -230,7 +232,7 @@ topologicalOrder workflow =
                         Ok acc
 
                     else
-                        Err (Cycle "?" "?")
+                        Err (WouldCycle "*" "*")
 
                 id :: _ ->
                     let
@@ -277,11 +279,47 @@ errorToString err =
         DuplicateEdge from to ->
             "Edge already exists: " ++ from ++ " -> " ++ to
 
-        Cycle from to ->
-            "Cycle rejected: " ++ from ++ " -> " ++ to ++ " would close a loop."
+        WouldCycle from to ->
+            "WouldCycle " ++ from ++ " -> " ++ to
 
         InvalidJson reason ->
             "Invalid JSON: " ++ reason
+
+
+formatError : Error -> String
+formatError err =
+    case err of
+        EmptyNodeId ->
+            "Err EmptyNodeId"
+
+        DuplicateNode id ->
+            "Err (DuplicateNode " ++ id ++ ")"
+
+        UnknownNode id ->
+            "Err (UnknownNode " ++ id ++ ")"
+
+        DuplicateEdge from to ->
+            "Err (DuplicateEdge " ++ from ++ " -> " ++ to ++ ")"
+
+        WouldCycle from to ->
+            "Err (WouldCycle " ++ from ++ " -> " ++ to ++ ")"
+
+        InvalidJson reason ->
+            "Err (InvalidJson " ++ reason ++ ")"
+
+
+formatTopo : Result Error (List Node) -> String
+formatTopo result =
+    case result of
+        Ok order ->
+            if List.isEmpty order then
+                "Ok []"
+
+            else
+                "Ok [ " ++ String.join ", " (List.map .id order) ++ " ]"
+
+        Err err ->
+            formatError err
 
 
 statusToString : Status -> String
