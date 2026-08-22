@@ -47,15 +47,9 @@ elm reactor
 
 Open `http://localhost:8000/src/Main.elm`. The editor loads `styles.css` from the `ui/` root.
 
-The screen shows nodes, edges, and `topological_order : Result` (for example `Ok [ extract, transform, load ]`). A rejected edge is `Err (WouldCycle load -> extract)` — a typed `Result` on the surface, not `window.alert`.
+First load is the extract → transform → load example (`Ok [ extract, transform, load ]`), not an empty graph. A slim guide walks the proving path: read the DAG, then click load then extract. A rejected edge is `Err (WouldCycle load -> extract)` on the surface — a typed `Result`, not `window.alert`. Skip hides the guide for the session. Restart / Reset example restore this ETL document.
 
 UI follows Nathan's desktop canon ([GPUI design guides](https://longbridge.github.io/gpui-component/docs/design-guides)): native, quiet, precise; vanilla CSS tokens on the 2/4/8/12/16/24/32 scale; arrow cursor on buttons; sentence-case verbs.
-
-Build a three-node DAG:
-
-1. Add nodes `extract`, `transform`, `load`.
-2. Click `extract` then `transform`, then `transform` then `load`.
-3. Closing `load → extract` stays `WouldCycle`; the JSON still has two edges.
 
 ## JSON shape
 

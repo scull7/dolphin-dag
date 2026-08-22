@@ -97,6 +97,27 @@ body {
     margin-top: var(--space-4);
 }
 
+.guide {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-12);
+    padding: var(--space-8) var(--space-16);
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+}
+
+.guide-copy {
+    font-size: var(--text-14);
+    color: var(--foreground);
+}
+
+.guide-actions {
+    display: flex;
+    gap: var(--space-8);
+    flex-shrink: 0;
+}
+
 .workspace {
     flex: 1;
     display: grid;

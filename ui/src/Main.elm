@@ -8,7 +8,7 @@ import Dag
         , Status(..)
         , Workflow
         )
-import Html exposing (Html, button, div, h1, h2, input, label, li, option, p, select, span, textarea, ul)
+import Html exposing (Html, button, div, h1, h2, input, label, li, option, p, select, span, text, textarea, ul)
 import Html.Attributes as Attr
 import Html.Events as Events
 import Json.Decode as Decode
@@ -26,6 +26,13 @@ main =
         }
 
 
+type Guide
+    = Hidden
+    | Intro
+    | TryCycle
+    | Done
+
+
 type alias Model =
     { workflow : Workflow
     , draftId : String
@@ -35,19 +42,40 @@ type alias Model =
     , selected : Maybe String
     , jsonText : String
     , mutation : Maybe (Result Dag.Error String)
+    , guide : Guide
+    }
+
+
+exampleWorkflow : Workflow
+exampleWorkflow =
+    { nodes =
+        [ Dag.node "extract" "Extract logs" "shell" Pending
+        , Dag.node "transform" "Transform" "python" Pending
+        , Dag.node "load" "Load warehouse" "sql" Pending
+        ]
+    , edges =
+        [ { from = "extract", to = "transform" }
+        , { from = "transform", to = "load" }
+        ]
     }
 
 
 init : Model
 init =
-    { workflow = Dag.empty
+    exampleModel Intro
+
+
+exampleModel : Guide -> Model
+exampleModel guide =
+    { workflow = exampleWorkflow
     , draftId = ""
     , draftName = ""
     , draftTaskType = "shell"
     , draftStatus = Pending
     , selected = Nothing
-    , jsonText = Dag.encodePretty Dag.empty
+    , jsonText = Dag.encodePretty exampleWorkflow
     , mutation = Nothing
+    , guide = guide
     }
 
 
@@ -64,6 +92,10 @@ type Msg
     | TypedJson String
     | LoadJson
     | SyncJson
+    | GuideNext
+    | GuideSkip
+    | GuideRestart
+    | ResetExample
 
 
 update : Msg -> Model -> Model
@@ -129,6 +161,23 @@ update msg model =
         SyncJson ->
             refreshJson { model | mutation = Just (Ok "synced JSON from graph") }
 
+        GuideNext ->
+            case model.guide of
+                Intro ->
+                    { model | guide = TryCycle }
+
+                _ ->
+                    model
+
+        GuideSkip ->
+            { model | guide = Hidden }
+
+        GuideRestart ->
+            exampleModel Intro
+
+        ResetExample ->
+            restoreExample model
+
 
 addDraftNode : Model -> Model
 addDraftNode model =
@@ -180,10 +229,11 @@ connectOrSelect id model =
             else
                 case Dag.addEdge from id model.workflow of
                     Err err ->
-                        { model
-                            | selected = Nothing
-                            , mutation = Just (Err err)
-                        }
+                        advanceGuide
+                            { model
+                                | selected = Nothing
+                                , mutation = Just (Err err)
+                            }
 
                     Ok workflow ->
                         refreshJson
@@ -192,6 +242,30 @@ connectOrSelect id model =
                                 , selected = Nothing
                                 , mutation = Just (Ok ("add_edge " ++ from ++ " -> " ++ id))
                             }
+
+
+advanceGuide : Model -> Model
+advanceGuide model =
+    case ( model.guide, model.mutation ) of
+        ( TryCycle, Just (Err (Dag.WouldCycle "load" "extract")) ) ->
+            { model | guide = Done }
+
+        _ ->
+            model
+
+
+restoreExample : Model -> Model
+restoreExample model =
+    { model
+        | workflow = exampleWorkflow
+        , selected = Nothing
+        , jsonText = Dag.encodePretty exampleWorkflow
+        , mutation = Nothing
+        , draftId = ""
+        , draftName = ""
+        , draftTaskType = "shell"
+        , draftStatus = Pending
+    }
 
 
 refreshJson : Model -> Model
@@ -257,6 +331,7 @@ view model =
         [ Html.node "link" [ Attr.rel "stylesheet", Attr.href "/styles.css" ] []
         , header
         , resultBanner model
+        , guideStrip model
         , div [ Attr.class "workspace" ]
             [ toolbox model
             , canvasPanel model
@@ -299,6 +374,43 @@ resultBanner model =
         , div [ Attr.class "result-line" ]
             [ Html.text ("topological_order : " ++ Dag.formatTopo topo) ]
         ]
+
+
+guideStrip : Model -> Html Msg
+guideStrip model =
+    case model.guide of
+        Hidden ->
+            text ""
+
+        Intro ->
+            guideRow "This is extract → transform → load. A valid DAG."
+                [ ghost "Next" GuideNext
+                , ghost "Skip" GuideSkip
+                ]
+
+        TryCycle ->
+            guideRow "Click load, then extract."
+                [ ghost "Skip" GuideSkip
+                ]
+
+        Done ->
+            guideRow "WouldCycle. The graph stayed acyclic. You can keep editing."
+                [ ghost "Restart" GuideRestart
+                , ghost "Skip" GuideSkip
+                ]
+
+
+guideRow : String -> List (Html Msg) -> Html Msg
+guideRow copy actions =
+    div [ Attr.class "guide" ]
+        [ div [ Attr.class "guide-copy" ] [ Html.text copy ]
+        , div [ Attr.class "guide-actions" ] actions
+        ]
+
+
+ghost : String -> Msg -> Html Msg
+ghost label msg =
+    button [ Attr.class "ghost", Events.onClick msg ] [ Html.text label ]
 
 
 toolbox : Model -> Html Msg
@@ -403,7 +515,10 @@ canvasPanel model =
     div [ Attr.class "panel canvas-panel" ]
         [ div [ Attr.class "canvas-head" ]
             [ h2 [] [ Html.text "Graph" ]
-            , button [ Attr.class "ghost", Events.onClick ClearSelection ] [ Html.text "Clear" ]
+            , div [ Attr.class "guide-actions" ]
+                [ button [ Attr.class "ghost", Events.onClick ClearSelection ] [ Html.text "Clear" ]
+                , button [ Attr.class "ghost", Events.onClick ResetExample ] [ Html.text "Reset example" ]
+                ]
             ]
         , if List.isEmpty model.workflow.nodes then
             div [ Attr.class "empty-canvas" ]
