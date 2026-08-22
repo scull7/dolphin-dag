@@ -1,0 +1,289 @@
+:root {
+    --ink: #1d2740;
+    --muted: #5c6b86;
+    --paper: #ffffff;
+    --canvas: #eef2f8;
+    --line: #d5deea;
+    --navy: #15233b;
+    --accent: #2f6fed;
+    --cycle: #b42318;
+    --ok: #1f6b3a;
+    --pending: #7b879c;
+    --running: #2f6fed;
+    --success: #1f6b3a;
+    --failure: #b42318;
+    --shadow: 0 8px 24px rgba(21, 35, 59, 0.08);
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    background: #dfe6f1;
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.app {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.masthead {
+    background: var(--navy);
+    color: #f4f7fb;
+    padding: 18px 22px;
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+}
+
+.masthead h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    letter-spacing: 0.02em;
+}
+
+.masthead p {
+    margin: 0;
+    color: #c5d0e2;
+    font-size: 14px;
+}
+
+.banner {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.banner-quiet {
+    background: #e7eef8;
+    color: var(--muted);
+}
+
+.banner-ok {
+    background: #e5f4ea;
+    color: var(--ok);
+}
+
+.banner-cycle {
+    background: #fdecea;
+    color: var(--cycle);
+    font-weight: 600;
+}
+
+.workspace {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr) 300px;
+    gap: 12px;
+    align-items: start;
+}
+
+.panel {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: var(--shadow);
+    min-height: 520px;
+}
+
+.panel h2 {
+    margin: 16px 0 8px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+}
+
+.panel h2:first-child {
+    margin-top: 0;
+}
+
+.field {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.field span {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+input,
+select,
+textarea,
+button {
+    font: inherit;
+}
+
+input,
+select,
+textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #fbfcfe;
+    color: var(--ink);
+}
+
+button {
+    border: 1px solid var(--line);
+    background: #f4f7fb;
+    color: var(--ink);
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    width: 100%;
+}
+
+button.link,
+button.danger-quiet {
+    background: transparent;
+    border: 0;
+    padding: 0;
+}
+
+button.link {
+    color: var(--accent);
+    text-align: left;
+}
+
+button.danger-quiet {
+    color: var(--cycle);
+    font-size: 12px;
+}
+
+.hint,
+.muted,
+.topo {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.topo.cycle {
+    color: var(--cycle);
+    font-weight: 600;
+}
+
+.item-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.item-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+}
+
+.canvas-panel {
+    background: var(--canvas);
+}
+
+.canvas-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.empty-canvas {
+    margin-top: 48px;
+    text-align: center;
+    color: var(--muted);
+}
+
+.canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 360px;
+}
+
+.edge {
+    stroke: #4a5d82;
+    stroke-width: 2;
+}
+
+.task-card rect {
+    fill: #fff;
+    stroke: #9aabc8;
+    stroke-width: 1.5;
+}
+
+.task-card.selected rect {
+    stroke: var(--accent);
+    stroke-width: 2.5;
+}
+
+.task-name {
+    font-size: 13px;
+    font-weight: 650;
+    fill: var(--ink);
+}
+
+.task-meta,
+.task-status {
+    font-size: 11px;
+    fill: var(--muted);
+}
+
+.task-card.status-pending .task-status {
+    fill: var(--pending);
+}
+
+.task-card.status-running .task-status {
+    fill: var(--running);
+}
+
+.task-card.status-success .task-status {
+    fill: var(--success);
+}
+
+.task-card.status-failure .task-status {
+    fill: var(--failure);
+}
+
+.json {
+    min-height: 320px;
+    font-family: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+}
+
+.row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.row button {
+    flex: 1;
+}
+
+@media (max-width: 980px) {
+    .workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .panel {
+        min-height: 0;
+    }
+}
