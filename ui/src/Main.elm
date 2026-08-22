@@ -28,6 +28,7 @@ main =
 
 type Guide
     = Hidden
+    | ReadPipeline
     | ClickLoad
     | ClickExtract
     | Done
@@ -62,7 +63,7 @@ exampleWorkflow =
 
 init : Model
 init =
-    exampleModel ClickLoad
+    exampleModel ReadPipeline
 
 
 exampleModel : Guide -> Model
@@ -92,6 +93,7 @@ type Msg
     | TypedJson String
     | LoadJson
     | SyncJson
+    | GuideNext
     | GuideSkip
     | GuideRestart
     | ResetExample
@@ -160,14 +162,22 @@ update msg model =
         SyncJson ->
             refreshJson { model | mutation = Just (Ok "synced JSON from graph") }
 
+        GuideNext ->
+            case model.guide of
+                ReadPipeline ->
+                    { model | guide = ClickLoad, selected = Nothing, mutation = Nothing }
+
+                _ ->
+                    model
+
         GuideSkip ->
             { model | guide = Hidden }
 
         GuideRestart ->
-            exampleModel ClickLoad
+            exampleModel ReadPipeline
 
         ResetExample ->
-            exampleModel ClickLoad
+            exampleModel ReadPipeline
 
 
 addDraftNode : Model -> Model
@@ -246,6 +256,9 @@ connectOrSelect id model =
 advanceGuide : Model -> Model
 advanceGuide model =
     case model.guide of
+        ReadPipeline ->
+            model
+
         ClickLoad ->
             if model.selected == Just "load" then
                 { model | guide = ClickExtract }
@@ -281,6 +294,9 @@ guideOpen guide =
         Done ->
             False
 
+        ReadPipeline ->
+            True
+
         ClickLoad ->
             True
 
@@ -296,6 +312,9 @@ guideTarget guide =
 
         ClickExtract ->
             Just "extract"
+
+        ReadPipeline ->
+            Nothing
 
         Hidden ->
             Nothing
@@ -387,63 +406,49 @@ header =
 
 resultBanner : Model -> Html Msg
 resultBanner model =
+    case model.guide of
+        Done ->
+            div [ Attr.class "result result-error" ]
+                [ div [] [ Html.text "Can't connect Load warehouse to Extract logs. That would loop." ] ]
+
+        ReadPipeline ->
+            text ""
+
+        ClickLoad ->
+            text ""
+
+        ClickExtract ->
+            text ""
+
+        Hidden ->
+            rustResultBanner model
+
+
+rustResultBanner : Model -> Html Msg
+rustResultBanner model =
     let
         topo =
             Dag.topologicalOrder model.workflow
 
-        proving =
-            case model.guide of
-                Done ->
-                    True
+        ( className, body ) =
+            case ( model.mutation, topo ) of
+                ( Just (Err err), _ ) ->
+                    ( "result result-error", Dag.formatError err )
 
-                _ ->
-                    False
+                ( _, Err err ) ->
+                    ( "result result-error", "topological_order " ++ Dag.formatError err )
 
-        ( className, body, showTopo ) =
-            case ( model.mutation, topo, model.guide ) of
-                ( Just (Err err), _, Done ) ->
-                    ( "result result-error", Dag.formatError err, False )
+                ( Just (Ok okText), Ok _ ) ->
+                    ( "result result-ok", "Ok (" ++ okText ++ ")" )
 
-                ( Just (Err err), _, _ ) ->
-                    ( "result result-error", Dag.formatError err, True )
-
-                ( _, Err err, _ ) ->
-                    ( "result result-error", "topological_order " ++ Dag.formatError err, True )
-
-                ( Just (Ok text), Ok _, Hidden ) ->
-                    ( "result result-ok", "Ok (" ++ text ++ ")", True )
-
-                ( Just (Ok text), Ok _, Done ) ->
-                    ( "result result-ok", "Ok (" ++ text ++ ")", True )
-
-                ( Just (Ok _), Ok _, _ ) ->
-                    ( "result result-quiet", "", True )
-
-                ( Nothing, Ok _, Hidden ) ->
-                    ( "result result-quiet", "add_edge : Result WouldCycle (). Select two nodes to connect.", True )
-
-                ( Nothing, Ok _, Done ) ->
-                    ( "result result-quiet", "add_edge : Result WouldCycle (). Select two nodes to connect.", True )
-
-                ( Nothing, Ok _, _ ) ->
-                    ( "result result-quiet", "", True )
+                ( Nothing, Ok _ ) ->
+                    ( "result result-quiet", "add_edge : Result WouldCycle (). Select two nodes to connect." )
     in
     div [ Attr.class className ]
-        ((if String.isEmpty body then
-            []
-
-          else
-            [ div [] [ Html.text body ] ]
-         )
-            ++ (if showTopo && not proving then
-                    [ div [ Attr.class "result-line" ]
-                        [ Html.text ("topological_order : " ++ Dag.formatTopo topo) ]
-                    ]
-
-                else
-                    []
-               )
-        )
+        [ div [] [ Html.text body ]
+        , div [ Attr.class "result-line" ]
+            [ Html.text ("topological_order : " ++ Dag.formatTopo topo) ]
+        ]
 
 
 guideStrip : Model -> Html Msg
@@ -452,18 +457,24 @@ guideStrip model =
         Hidden ->
             text ""
 
+        ReadPipeline ->
+            guideRow "This is a one-way pipeline. Extract logs feeds Transform, which feeds Load warehouse."
+                [ button [ Attr.class "primary", Events.onClick GuideNext ] [ Html.text "Next" ]
+                , ghost "Skip" GuideSkip
+                ]
+
         ClickLoad ->
-            guideRow "This extract → transform → load graph is valid. Click Load warehouse."
+            guideRow "Now try sending work backward. Click Load warehouse."
                 [ ghost "Skip" GuideSkip
                 ]
 
         ClickExtract ->
-            guideRow "Now click Extract logs. That edge would cycle, so the editor must reject it."
+            guideRow "Click Extract logs. That would send Load warehouse back into Extract logs and loop forever."
                 [ ghost "Skip" GuideSkip
                 ]
 
         Done ->
-            guideRow "Rejected. That edge would loop. The two real edges stayed. You can keep editing."
+            guideRow "Stopped. That would loop forever. The real pipeline is unchanged: extract → transform → load. You can keep editing."
                 [ ghost "Restart" GuideRestart
                 , ghost "Skip" GuideSkip
                 ]
@@ -844,24 +855,29 @@ drawNode selected target placed =
 topoLine : Guide -> Workflow -> Html Msg
 topoLine guide workflow =
     case guide of
-        Done ->
-            text ""
+        Hidden ->
+            rustTopoLine workflow
 
         _ ->
-            let
-                result =
-                    Dag.topologicalOrder workflow
+            text ""
 
-                className =
-                    case result of
-                        Err _ ->
-                            "topo cycle"
 
-                        Ok _ ->
-                            "topo"
-            in
-            p [ Attr.class className ]
-                [ Html.text ("topological_order : " ++ Dag.formatTopo result) ]
+rustTopoLine : Workflow -> Html Msg
+rustTopoLine workflow =
+    let
+        result =
+            Dag.topologicalOrder workflow
+
+        className =
+            case result of
+                Err _ ->
+                    "topo cycle"
+
+                Ok _ ->
+                    "topo"
+    in
+    p [ Attr.class className ]
+        [ Html.text ("topological_order : " ++ Dag.formatTopo result) ]
 
 
 documentPanel : Model -> Html Msg

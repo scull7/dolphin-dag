@@ -47,7 +47,7 @@ elm reactor
 
 Open `http://localhost:8000/src/Main.elm`. The editor loads `styles.css` from the `ui/` root.
 
-First load is the extract → transform → load example (`Ok [ extract, transform, load ]`), not an empty graph. The first-run guide starts on the action: **Load warehouse** is highlighted, then **Extract logs**. Copy uses the names on the cards. A rejected edge is `Err (WouldCycle load -> extract)` on the surface — a typed `Result`, not `window.alert`. During that proving moment the editor shows only the rejection, not a competing `Ok` topo line. Skip hides the guide for the session. Restart / Reset example restore this ETL document and the first highlight.
+First load is the finished extract → transform → load pipeline, already connected. The first-run guide starts by reading that one-way flow (no highlight). Next asks the visitor to send work backward: **Load warehouse**, then **Extract logs**. Copy uses the names on the cards. The proving moment is one human refusal — `Can't connect Load warehouse to Extract logs. That would loop.` — not `Err (WouldCycle …)` and not a competing `Ok` topo line. After Skip, rust-style Result lines can return. Restart / Reset example restore this ETL document and the read step.
 
 UI follows Nathan's desktop canon ([GPUI design guides](https://longbridge.github.io/gpui-component/docs/design-guides)): native, quiet, precise; vanilla CSS tokens on the 2/4/8/12/16/24/32 scale; arrow cursor on buttons; sentence-case verbs.
 
