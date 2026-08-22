@@ -43,7 +43,9 @@ elm reactor
 
 Open `http://localhost:8000/src/Main.elm`. The editor loads `styles.css` from the `ui/` root.
 
-The screen shows nodes, edges, and `topological_order : Result` (for example `Ok [ extract, transform, load ]`). A rejected edge is `Err (WouldCycle load -> extract)` on the banner — a typed `Result`, not `window.alert`.
+The screen shows nodes, edges, and `topological_order : Result` (for example `Ok [ extract, transform, load ]`). A rejected edge is `Err (WouldCycle load -> extract)` — a typed `Result` on the surface, not `window.alert`.
+
+UI follows Nathan's desktop canon ([GPUI design guides](https://longbridge.github.io/gpui-component/docs/design-guides)): native, quiet, precise; vanilla CSS tokens on the 2/4/8/12/16/24/32 scale; arrow cursor on buttons; sentence-case verbs.
 
 Build a three-node DAG:
 

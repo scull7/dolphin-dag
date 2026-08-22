@@ -270,7 +270,7 @@ header =
     Html.header [ Attr.class "masthead" ]
         [ h1 [] [ Html.text "dolphin-dag" ]
         , p []
-            [ Html.text "DolphinScheduler-style workflow DAG editor. Rust owns the document; this Elm canvas edits the same JSON." ]
+            [ Html.text "DolphinScheduler-style DAG. Rust document, Elm editor." ]
         ]
 
 
@@ -283,16 +283,16 @@ resultBanner model =
         ( className, body ) =
             case ( model.mutation, topo ) of
                 ( Just (Err err), _ ) ->
-                    ( "banner banner-cycle", Dag.formatError err )
+                    ( "result result-error", Dag.formatError err )
 
                 ( _, Err err ) ->
-                    ( "banner banner-cycle", "topological_order " ++ Dag.formatError err )
+                    ( "result result-error", "topological_order " ++ Dag.formatError err )
 
                 ( Just (Ok text), Ok _ ) ->
-                    ( "banner banner-ok", "Ok (" ++ text ++ ")" )
+                    ( "result result-ok", "Ok (" ++ text ++ ")" )
 
                 ( Nothing, Ok _ ) ->
-                    ( "banner banner-quiet", "add_edge : Result WouldCycle (). Click two nodes to connect." )
+                    ( "result result-quiet", "add_edge : Result WouldCycle (). Select two nodes to connect." )
     in
     div [ Attr.class className ]
         [ div [] [ Html.text body ]
@@ -304,7 +304,7 @@ resultBanner model =
 toolbox : Model -> Html Msg
 toolbox model =
     div [ Attr.class "panel toolbox" ]
-        [ h2 [] [ Html.text "Add task" ]
+        [ h2 [] [ Html.text "Task" ]
         , labeledInput "Id" "extract" model.draftId TypedId
         , labeledInput "Name" "Extract logs" model.draftName TypedName
         , labeledInput "Task type" "shell" model.draftTaskType TypedTaskType
@@ -316,12 +316,12 @@ toolbox model =
                     [ Pending, Running, Success, Failure ]
                 )
             ]
-        , button [ Attr.class "primary", Events.onClick AddNode ] [ Html.text "Add node" ]
+        , button [ Attr.class "primary", Events.onClick AddNode ] [ Html.text "Add" ]
         , p [ Attr.class "hint" ]
-            [ Html.text "Leave id blank to slug the name. Click a source node, then a target node, to connect." ]
+            [ Html.text "Blank id slugs the name. Select a source, then a target." ]
         , h2 [] [ Html.text "Nodes" ]
         , ul [ Attr.class "item-list" ]
-            (List.map nodeRow model.workflow.nodes)
+            (List.map (nodeRow model.selected) model.workflow.nodes)
         , h2 [] [ Html.text "Edges" ]
         , ul [ Attr.class "item-list" ]
             (List.map edgeRow model.workflow.edges)
@@ -351,15 +351,23 @@ statusOption current status =
         [ Html.text (Dag.statusToString status) ]
 
 
-nodeRow : Node -> Html Msg
-nodeRow item =
-    li []
-        [ button [ Attr.class "link", Events.onClick (ClickNode item.id) ]
+nodeRow : Maybe String -> Node -> Html Msg
+nodeRow selected item =
+    let
+        rowClass =
+            if selected == Just item.id then
+                "selected-row"
+
+            else
+                ""
+    in
+    li [ Attr.class rowClass ]
+        [ button [ Attr.class "ghost row-action", Events.onClick (ClickNode item.id) ]
             [ Html.text item.name
             , span [ Attr.class "muted" ] [ Html.text (" · " ++ item.id) ]
             ]
-        , button [ Attr.class "danger-quiet", Events.onClick (RemoveNode item.id) ]
-            [ Html.text "remove" ]
+        , button [ Attr.class "danger", Events.onClick (RemoveNode item.id) ]
+            [ Html.text "Remove" ]
         ]
 
 
@@ -367,8 +375,8 @@ edgeRow : Edge -> Html Msg
 edgeRow edge =
     li []
         [ span [] [ Html.text (edge.from ++ " → " ++ edge.to) ]
-        , button [ Attr.class "danger-quiet", Events.onClick (RemoveEdge edge.from edge.to) ]
-            [ Html.text "remove" ]
+        , button [ Attr.class "danger", Events.onClick (RemoveEdge edge.from edge.to) ]
+            [ Html.text "Remove" ]
         ]
 
 
@@ -394,12 +402,12 @@ canvasPanel model =
     in
     div [ Attr.class "panel canvas-panel" ]
         [ div [ Attr.class "canvas-head" ]
-            [ h2 [] [ Html.text "Workflow canvas" ]
-            , button [ Events.onClick ClearSelection ] [ Html.text "Clear selection" ]
+            [ h2 [] [ Html.text "Graph" ]
+            , button [ Attr.class "ghost", Events.onClick ClearSelection ] [ Html.text "Clear" ]
             ]
         , if List.isEmpty model.workflow.nodes then
             div [ Attr.class "empty-canvas" ]
-                [ Html.text "No tasks yet. Add extract, transform, and load from the left, then connect them." ]
+                [ Html.text "Add extract, transform, and load, then connect them." ]
 
           else
             Svg.svg
@@ -517,7 +525,7 @@ arrowDef =
             ]
             [ Svg.path
                 [ SvgAttr.d "M 0 0 L 10 5 L 0 10 z"
-                , SvgAttr.fill "#4a5d82"
+                , SvgAttr.class "edge-arrow"
                 ]
                 []
             ]
@@ -586,7 +594,7 @@ drawNode selected placed =
         [ Svg.rect
             [ SvgAttr.width (String.fromFloat nodeWidth)
             , SvgAttr.height (String.fromFloat nodeHeight)
-            , SvgAttr.rx "8"
+            , SvgAttr.rx "4"
             ]
             []
         , Svg.text_
@@ -631,9 +639,9 @@ topoLine workflow =
 documentPanel : Model -> Html Msg
 documentPanel model =
     div [ Attr.class "panel document" ]
-        [ h2 [] [ Html.text "JSON document" ]
+        [ h2 [] [ Html.text "Document" ]
         , p [ Attr.class "hint" ]
-            [ Html.text "Same shape Rust serde uses. Save by copying. Load pastes a document back into the graph." ]
+            [ Html.text "Shared JSON. Copy to save; Load applies the textarea." ]
         , textarea
             [ Attr.class "json"
             , Attr.value model.jsonText
@@ -642,7 +650,7 @@ documentPanel model =
             ]
             []
         , div [ Attr.class "row" ]
-            [ button [ Attr.class "primary", Events.onClick LoadJson ] [ Html.text "Load JSON" ]
-            , button [ Events.onClick SyncJson ] [ Html.text "Reset from graph" ]
+            [ button [ Attr.class "primary", Events.onClick LoadJson ] [ Html.text "Load" ]
+            , button [ Attr.class "ghost", Events.onClick SyncJson ] [ Html.text "Reset" ]
             ]
         ]
