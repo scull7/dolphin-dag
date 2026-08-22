@@ -31,6 +31,10 @@ Named tests in `crates/dolphin-dag/tests/dag.rs`:
 
 `Workflow::add_edge` returns `Result<(), Error>`. A loop is `Error::WouldCycle { from, to }`, not a panic or an untyped string. There is no worker / ready-set execution in this milestone.
 
+## Live preview
+
+Netlify builds the Elm editor from `ui/` (`npm run build` → `elm make --optimize`). The published site is that directory, so `/styles.css` stays next to `index.html`.
+
 ## Elm editor
 
 Requires [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html).
