@@ -1,6 +1,7 @@
 module Main exposing (main)
 
 import Browser
+import Browser.Events
 import Dag
     exposing
         ( Edge
@@ -19,11 +20,40 @@ import Svg.Events as SvgEvents
 
 main : Program () Model Msg
 main =
-    Browser.sandbox
-        { init = init
-        , update = update
+    Browser.element
+        { init = \_ -> ( init, Cmd.none )
+        , update = updateWithNoCmd
+        , subscriptions = subscriptions
         , view = view
         }
+
+
+updateWithNoCmd : Msg -> Model -> ( Model, Cmd Msg )
+updateWithNoCmd msg model =
+    ( update msg model, Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    case model.guide of
+        ReadPipeline ->
+            Browser.Events.onKeyDown escapeDecoder
+
+        _ ->
+            Sub.none
+
+
+escapeDecoder : Decode.Decoder Msg
+escapeDecoder =
+    Decode.field "key" Decode.string
+        |> Decode.andThen
+            (\key ->
+                if key == "Escape" then
+                    Decode.succeed GuideSkip
+
+                else
+                    Decode.fail "ignored"
+            )
 
 
 type Guide
@@ -323,6 +353,82 @@ guideTarget guide =
             Nothing
 
 
+type Placement
+    = Center
+    | Strip
+
+
+type Advance
+    = NextButton
+    | WaitForClick
+
+
+type alias WalkFace =
+    { beat : Guide
+    , placement : Placement
+    , advance : Advance
+    , index : Int
+    }
+
+
+walkFace : Guide -> Maybe WalkFace
+walkFace guide =
+    case guide of
+        Hidden ->
+            Nothing
+
+        ReadPipeline ->
+            Just
+                { beat = ReadPipeline
+                , placement = Center
+                , advance = NextButton
+                , index = 1
+                }
+
+        ClickLoad ->
+            Just
+                { beat = ClickLoad
+                , placement = Strip
+                , advance = WaitForClick
+                , index = 2
+                }
+
+        ClickExtract ->
+            Just
+                { beat = ClickExtract
+                , placement = Strip
+                , advance = WaitForClick
+                , index = 3
+                }
+
+        Done ->
+            Just
+                { beat = Done
+                , placement = Strip
+                , advance = WaitForClick
+                , index = 4
+                }
+
+
+guideCopy : Guide -> String
+guideCopy guide =
+    case guide of
+        ReadPipeline ->
+            "This is a one-way pipeline. Extract logs feeds Transform, which feeds Load warehouse."
+
+        ClickLoad ->
+            "Now try sending work backward. Click Load warehouse."
+
+        ClickExtract ->
+            "Click Extract logs. That would send Load warehouse back into Extract logs and loop forever."
+
+        Done ->
+            "Stopped. That would loop forever. The real pipeline is unchanged: extract → transform → load. You can keep editing."
+
+        Hidden ->
+            ""
+
+
 refreshJson : Model -> Model
 refreshJson model =
     { model | jsonText = Dag.encodePretty model.workflow }
@@ -386,7 +492,7 @@ view model =
         [ Html.node "link" [ Attr.rel "stylesheet", Attr.href "/styles.css" ] []
         , header
         , resultBanner model
-        , guideStrip model
+        , viewGuide model
         , div [ Attr.class "workspace" ]
             [ toolbox model
             , canvasPanel model
@@ -451,33 +557,55 @@ rustResultBanner model =
         ]
 
 
-guideStrip : Model -> Html Msg
-guideStrip model =
-    case model.guide of
-        Hidden ->
+viewGuide : Model -> Html Msg
+viewGuide model =
+    case walkFace model.guide of
+        Nothing ->
             text ""
 
-        ReadPipeline ->
-            guideRow "This is a one-way pipeline. Extract logs feeds Transform, which feeds Load warehouse."
-                [ button [ Attr.class "primary", Events.onClick GuideNext ] [ Html.text "Next" ]
-                , ghost "Skip" GuideSkip
-                ]
+        Just face ->
+            case face.placement of
+                Center ->
+                    centeredPopover face
 
-        ClickLoad ->
-            guideRow "Now try sending work backward. Click Load warehouse."
-                [ ghost "Skip" GuideSkip
-                ]
+                Strip ->
+                    guideRow (guideCopy face.beat) (stripActions face)
 
-        ClickExtract ->
-            guideRow "Click Extract logs. That would send Load warehouse back into Extract logs and loop forever."
-                [ ghost "Skip" GuideSkip
-                ]
 
+centeredPopover : WalkFace -> Html Msg
+centeredPopover face =
+    div [ Attr.class "walk-card" ]
+        [ p [ Attr.class "walk-copy" ] [ Html.text (guideCopy face.beat) ]
+        , div [ Attr.class "walk-bar" ]
+            [ span [ Attr.class "walk-index" ]
+                [ Html.text (String.fromInt face.index ++ "/4") ]
+            , div [ Attr.class "guide-actions" ] (centerActions face)
+            ]
+        ]
+
+
+centerActions : WalkFace -> List (Html Msg)
+centerActions face =
+    case face.advance of
+        NextButton ->
+            [ button [ Attr.class "primary", Events.onClick GuideNext ] [ Html.text "Next" ]
+            , ghost "Skip" GuideSkip
+            ]
+
+        WaitForClick ->
+            [ ghost "Skip" GuideSkip ]
+
+
+stripActions : WalkFace -> List (Html Msg)
+stripActions face =
+    case face.beat of
         Done ->
-            guideRow "Stopped. That would loop forever. The real pipeline is unchanged: extract → transform → load. You can keep editing."
-                [ ghost "Restart" GuideRestart
-                , ghost "Skip" GuideSkip
-                ]
+            [ ghost "Restart" GuideRestart
+            , ghost "Skip" GuideSkip
+            ]
+
+        _ ->
+            [ ghost "Skip" GuideSkip ]
 
 
 guideRow : String -> List (Html Msg) -> Html Msg
